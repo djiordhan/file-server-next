@@ -3,7 +3,6 @@ export const NAS_CONFIG = {
   UPLOAD_BASE_PATH: process.env.NEXT_PUBLIC_UPLOAD_BASE_PATH || '/uploads',
   MAX_FILE_SIZE: process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '100MB',
   ALLOWED_FILE_TYPES: process.env.NEXT_PUBLIC_ALLOWED_FILE_TYPES || '*',
-  CHUNK_SIZE: process.env.NEXT_PUBLIC_CHUNK_SIZE || '5MB', // Size at which files start chunking
   
   // Storage limits and configuration
   MAX_TOTAL_UPLOADS: process.env.NEXT_PUBLIC_MAX_TOTAL_UPLOADS || '10GB',
