@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir, access, appendFile, readFile, unlink } from 'fs/promises';
+import { writeFile, mkdir, access, appendFile, readFile, unlink, rename, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { NAS_CONFIG, StorageUtils } from '../../config/nas';
@@ -199,36 +199,65 @@ async function handleChunkedUpload(
       
       const finalUniquePath = join(fullUploadPath, uniqueFileName);
       
-      // Read the complete temp file and write it as the final file
-      const completeFileBuffer = await readFile(tempFilePath);
-      await writeFile(finalUniquePath, completeFileBuffer);
-      
-      // Clean up temp file
-      try {
-        await unlink(tempFilePath);
-        console.log(`Cleaned up temp file: ${tempFilePath}`);
-      } catch (error) {
-        console.warn('Could not delete temp file:', error);
-      }
-      
-      console.log(`Completed chunked upload: ${uniqueFileName} (${completeFileBuffer.length} bytes)`);
-      
-      return NextResponse.json({
-        success: true,
-        message: 'Chunked upload completed successfully',
-        files: [{
-          id: `chunked_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-          name: uniqueFileName,
-          originalName: fileName,
-          size: completeFileBuffer.length,
-          type: chunk.type,
-          path: `${sanitizedPath}/${uniqueFileName}`,
-          uploadedAt: new Date().toISOString(),
-          sizeFormatted: StorageUtils.formatSize(completeFileBuffer.length)
-        }],
-        uploadPath: sanitizedPath,
-        completed: true
-      });
+             // Try to rename temp file to final filename (more efficient than copy + delete)
+       try {
+         await rename(tempFilePath, finalUniquePath);
+         console.log(`Renamed temp file to final file: ${uniqueFileName}`);
+         // Get file size after rename
+         const stats = await stat(finalUniquePath);
+         const finalFileSize = stats.size;
+         
+         console.log(`Completed chunked upload: ${uniqueFileName} (${finalFileSize} bytes)`);
+         
+         return NextResponse.json({
+           success: true,
+           message: 'Chunked upload completed successfully',
+           files: [{
+             id: `chunked_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+             name: uniqueFileName,
+             originalName: fileName,
+             size: finalFileSize,
+             type: chunk.type,
+             path: `${sanitizedPath}/${uniqueFileName}`,
+             uploadedAt: new Date().toISOString(),
+             sizeFormatted: StorageUtils.formatSize(finalFileSize)
+           }],
+           uploadPath: sanitizedPath,
+           completed: true
+         });
+       } catch (error) {
+         // If rename fails, fall back to copy + delete
+         console.warn('Rename failed, falling back to copy + delete:', error);
+         const completeFileBuffer = await readFile(tempFilePath);
+         await writeFile(finalUniquePath, completeFileBuffer);
+         
+         // Clean up temp file
+         try {
+           await unlink(tempFilePath);
+           console.log(`Cleaned up temp file: ${tempFilePath}`);
+         } catch (cleanupError) {
+           console.warn('Could not delete temp file:', cleanupError);
+         }
+         
+         console.log(`Completed chunked upload: ${uniqueFileName} (${completeFileBuffer.length} bytes)`);
+         
+         return NextResponse.json({
+           success: true,
+           message: 'Chunked upload completed successfully',
+           files: [{
+             id: `chunked_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+             name: uniqueFileName,
+             originalName: fileName,
+             size: completeFileBuffer.length,
+             type: chunk.type,
+             path: `${sanitizedPath}/${uniqueFileName}`,
+             uploadedAt: new Date().toISOString(),
+             sizeFormatted: StorageUtils.formatSize(completeFileBuffer.length)
+           }],
+           uploadPath: sanitizedPath,
+           completed: true
+                  });
+       }
     } else {
       // Not the final chunk
       return NextResponse.json({
@@ -277,6 +306,22 @@ export async function GET() {
     console.error('Error in GET /api/upload:', error);
     return NextResponse.json(
       { error: 'Failed to get upload status' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE() {
+  try {
+    console.log('Manual cleanup endpoint called - no cleanup function available');
+    return NextResponse.json({
+      success: true,
+      message: 'Cleanup endpoint available but no cleanup function implemented'
+    });
+  } catch (error) {
+    console.error('Error in cleanup endpoint:', error);
+    return NextResponse.json(
+      { error: 'Cleanup failed' },
       { status: 500 }
     );
   }
